@@ -1,0 +1,132 @@
+---
+title: "ML HW5"
+author: "Neon(Youfang) Zhang"
+date: "2/17/2022"
+output: html_document
+---
+# EDA
+```{r}
+df <- read.csv("winequality-red.csv")
+
+boxplot(df$quality)
+
+summary(df$quality)
+
+df$quality_group <- cut(df$quality,
+                          breaks=c(2, 4, 6, 8),
+                          labels=c('Low', 'Medium', 'High'))
+
+barplot(table(df$quality_group))
+
+df$quality_group <- as.factor(df$quality_group)
+
+# Split data into training and testing
+set.seed(123)
+
+dt = sort(sample(nrow(df), nrow(df) * 0.8))
+train <- df[dt,]
+test <- df[-dt,]
+```
+
+We noticed that the medium is large propotion in the dataset, which is nearly 80%. We could understand this as most wine are medium qulity and about 13.5% wine are high quality and the rest is low quality
+
+# K-NN
+```{r}
+train_scale <- scale(train[, 1:12])
+test_scale <- scale(test[, 1:12])
+
+library(class)
+
+# Fitting KNN Model to training dataset
+# K=1
+nearest1 <- knn(train = train_scale,
+                      test = test_scale,
+                      cl = train$quality_group,
+                      k = 1)
+misClassError <- mean(nearest1 != test$quality_group)
+print(paste('Accuracy =', 1-misClassError))
+
+# K=3
+nearest3 <- knn(train = train_scale,
+                      test = test_scale,
+                      cl = train$quality_group,
+                      k = 3)
+misClassError <- mean(nearest3 != test$quality_group)
+print(paste('Accuracy =', 1-misClassError))
+
+# K=5
+nearest5 <- knn(train = train_scale,
+                      test = test_scale,
+                      cl = train$quality_group,
+                      k = 5)
+misClassError <- mean(nearest5 != test$quality_group)
+print(paste('Accuracy =', 1-misClassError))
+
+# We have the highest accuracy when K=3.
+
+# Confusiin Matrix
+cm <- table(test$quality_group, nearest3)
+table(test$quality_group)
+cm
+```
+
+The model achieved 97.5% accuracy with k is 3 which is higher than when k=1 and k=5.
+
+7 low quality wine are correctly classified as low and 4 are classified wrong as medium. Out of 280 medium quality wine, 277 are correctly classified as medium and only 3 are classified as high. 28 out of 29 high are correctly classified and 1 are classified as medium.
+
+# Multinomial Logistic Regression
+```{r}
+train$quality_group <- relevel(train$quality_group, ref = "Low")
+
+library(nnet)
+
+multinom_model <- multinom(quality_group ~ ., data = train)
+summary(multinom_model)
+
+exp(coef(multinom_model))
+head(round(fitted(multinom_model), 2))
+
+# Fit on the train data
+train$qualityPredicted <- predict(multinom_model, newdata = train, "class")
+tab <- table(train$quality_group, train$qualityPredicted)
+round((sum(diag(tab))/sum(tab))*100,2)
+
+# Test on the test data
+test$qualityPredicted <- predict(multinom_model, newdata = test, "class")
+tab2 <- table(test$quality_group, test$qualityPredicted)
+tab2
+round((sum(diag(tab2))/sum(tab2))*100,2)
+```
+
+The accuracy of the multinomial logistic regression classifier on the train data is 100%, on the test data is 100%
+
+# K-Means
+```{r}
+train_new <- train[,!names(train) %in% c("quality", "qualityPredicted","quality_group")]
+train_quality <- train[,"quality_group"]
+train_scale <- scale(train_new) 
+
+k3 <- kmeans(train_scale, centers = 3, nstart = 50)
+k3$size
+
+table(k3$cluster,train_quality)
+
+#library(factoextra)
+#fviz_cluster(k3, data = train_scale)
+
+```
+3 clusters' sizes are 570,418,291, the skewness is not too severe. It is different from the barplot of our real quality cluster that the median is the highest.
+
+It's hard to tell which cluster correspond to which quality, but comparing to the table of the multinomial logistic regression, it's accuracy is apparently lower. So in this scenario, the supervised algorithm wins.
+
+# Model Comparison
+knn, multinomial logistic regression, and k-means are all classification methods.
+
+knn: (1)knn is distance based algorithm. It simply choose the nearest k neighbors and make the majority neighbor class as the class of new observation. (2)It is memory friendly but super unstable, because the result can be easily flipped when k changes. (3)knn requires no training. (4)It is a supervised algorithm
+
+multinomial logistic regression: (1)multinomial logistic regression is probability based algorithm. It calculates the probability of each observation belongs to every class. (2) In this way, when the number of class is huge, it has strict demand of the memory.(3)The result is stable. (3)It requires training. (4)It is a supervised algorithm
+
+k-means: (1)k-means gradually learns how to cluster the unlabelled points into groups by analysis of the mean distance of said points.(2)In this way, how to randomly label the observation into clusters in the first place is important, because based on the iteration number, it has big impact on the final result.(3)k-means requires training. (4) It is an unsupervised algorithm.
+
+
+In this dataset, we would recommend the supervised algorithm. Because the accuracy of the knn and multinomial logistic regression outperform the k-means.
